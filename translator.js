@@ -7,6 +7,8 @@
 // @match        https://*.xn--gck1f423k.xn--1bvt37a.tools/*
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
+// @updateURL    https://raw.githubusercontent.com/bluenebula0528/uma/main/translator.js
+// @downloadURL  https://raw.githubusercontent.com/bluenebula0528/uma/main/translator.js
 // ==/UserScript==
 
 console.log("Translation script with iframe support running...");
