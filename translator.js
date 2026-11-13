@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U-tools 번역기
 // @namespace    Gray
-// @version      0.26.0
+// @version      0.26.1
 // @description  작성된 단어 사전으로 U-tools(우마무스메 공략 툴)의 일본어 스킬명·메뉴·코스 정보를 번역합니다. 최신 스킬은 우마무스메 트레이너스에서 자동 보충합니다.
 // @author       별구름
 // @match        https://xn--gck1f423k.xn--1bvt37a.tools/*
@@ -244,6 +244,24 @@
      * DOM 적용
      * ------------------------------------------------------------------ */
     let done = new WeakMap();        // 노드 → 마지막으로 기록한 번역 결과 (재처리 방지)
+    let doneAttr = new WeakMap();    // 요소 → { 속성명: 마지막으로 처리한 값 }
+
+    // 무한 루프 방지: 같은 노드에 1초 안에 너무 자주 쓰게 되면 그 노드는 더 이상 건드리지 않음
+    const LOOP_LIMIT = 10;
+    const writes = new WeakMap();
+    const given_up = new WeakSet();
+    function allowWrite(node) {
+        if (given_up.has(node)) return false;
+        const now = Date.now();
+        let w = writes.get(node);
+        if (!w || now - w.t > 1000) { w = { t: now, n: 0 }; writes.set(node, w); }
+        if (++w.n > LOOP_LIMIT) {
+            given_up.add(node);
+            console.warn('[U-tools 번역기] 반복 갱신이 감지되어 이 요소는 번역을 중단합니다:', node);
+            return false;
+        }
+        return true;
+    }
 
     function skipElement(el) {
         return SKIP_TAGS.has(el.tagName) || el.isContentEditable;
@@ -255,17 +273,26 @@
         const p = node.parentNode;
         if (p && p.nodeType === 1 && skipElement(p)) return;
         const t = translate(v);
-        if (t !== v) node.nodeValue = t;
         done.set(node, t);
+        if (t !== v && allowWrite(node)) node.nodeValue = t;
+    }
+
+    function doAttr(el, a) {
+        const v = el.getAttribute(a);
+        if (!v || !JP_RE.test(v)) return;
+        let rec = doneAttr.get(el);
+        if (rec && rec[a] === v) return;               // 이미 처리한 값 (변경 없음) → 다시 쓰지 않음
+        const t = translate(v);
+        if (!rec) doneAttr.set(el, rec = {});
+        rec[a] = t;
+        if (t !== v && allowWrite(el)) el.setAttribute(a, t);
     }
 
     function doAttrs(el) {
-        for (const a of ATTRS) {
-            const v = el.getAttribute(a);
-            if (v && JP_RE.test(v)) { const t = translate(v); if (t !== v) el.setAttribute(a, t); }
-        }
+        for (const a of ATTRS) doAttr(el, a);
         if (el.tagName === 'INPUT' && /^(button|submit|reset)$/i.test(el.type) && JP_RE.test(el.value)) {
-            el.value = translate(el.value);
+            const t = translate(el.value);
+            if (t !== el.value) el.value = t;
         }
         if (el.tagName === 'IFRAME') hookIframe(el);
     }
@@ -297,8 +324,7 @@
                 } else if (r.type === 'characterData') {
                     doText(r.target);
                 } else if (r.type === 'attributes') {
-                    const v = r.target.getAttribute(r.attributeName);
-                    if (v && JP_RE.test(v)) r.target.setAttribute(r.attributeName, translate(v));
+                    doAttr(r.target, r.attributeName);
                 }
             }
         }).observe(doc.documentElement, {
@@ -337,6 +363,7 @@
             C = compile(JSON.parse(dictText), liveOn ? liveList : null);
             memo = new Map();
             done = new WeakMap();
+            doneAttr = new WeakMap();
         } catch (e) {
             console.error('[U-tools 번역기] 사전 컴파일 실패', e);
         }
